@@ -8,6 +8,13 @@ def _headers() -> dict:
     return {"api_access_token": get_settings().chatwoot_api_access_token}
 
 
+def _bot_headers() -> dict:
+    # Use the agent bot token so Chatwoot attributes the message to the bot,
+    # not to the human admin. Using the admin token causes Chatwoot to auto-assign
+    # the conversation to the admin and stop calling the bot webhook.
+    return {"api_access_token": get_settings().chatwoot_hmac_token}
+
+
 def _base() -> str:
     s = get_settings()
     return f"{s.chatwoot_base_url}/api/v1/accounts/{s.chatwoot_account_id}"
@@ -17,7 +24,7 @@ def send_message(conversation_id: int, content: str) -> dict:
     url = f"{_base()}/conversations/{conversation_id}/messages"
     resp = httpx.post(
         url,
-        headers=_headers(),
+        headers=_bot_headers(),
         json={"content": content, "message_type": "outgoing", "private": False},
         timeout=15,
     )
