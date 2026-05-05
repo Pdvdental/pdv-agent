@@ -31,10 +31,6 @@ async def handle_incoming_message(data: dict) -> None:
         logger.info(f"Bot muted for conversation {chatwoot_conversation_id}")
         return
 
-    # Move pending conversations to open so the bot response reaches the user
-    if conversation_payload.get("status") == "pending":
-        chatwoot.update_conversation_status(chatwoot_conversation_id, "open")
-
     # Upsert patient
     patient = db.upsert_patient(
         phone_e164=phone,
