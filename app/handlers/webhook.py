@@ -1,21 +1,13 @@
 import logging
-from fastapi import Request, HTTPException
+from fastapi import Request
 
 from app.config import get_settings
-from app.integrations.chatwoot import validate_webhook_signature
 
 logger = logging.getLogger(__name__)
 
 
 async def verify_chatwoot_webhook(request: Request) -> dict:
-    """Validates HMAC signature and parses the Chatwoot webhook payload."""
-    body = await request.body()
-    signature = request.headers.get("X-Chatwoot-Signature", "")
-
-    if signature and not validate_webhook_signature(body, signature):
-        logger.warning(f"Invalid webhook signature received: '{signature}'")
-        raise HTTPException(status_code=401, detail="Invalid webhook signature")
-
+    """Parses the Chatwoot webhook payload."""
     return await request.json()
 
 
