@@ -12,7 +12,8 @@ async def verify_chatwoot_webhook(request: Request) -> dict:
     body = await request.body()
     signature = request.headers.get("X-Chatwoot-Signature", "")
 
-    if not validate_webhook_signature(body, signature):
+    if signature and not validate_webhook_signature(body, signature):
+        logger.warning(f"Invalid webhook signature received: '{signature}'")
         raise HTTPException(status_code=401, detail="Invalid webhook signature")
 
     return await request.json()
