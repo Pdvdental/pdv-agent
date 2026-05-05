@@ -20,7 +20,7 @@ async def verify_chatwoot_webhook(request: Request) -> dict:
 
 def should_bot_respond(conversation: dict) -> bool:
     s = get_settings()
-    if conversation.get("status") != "open":
+    if conversation.get("status") not in ("open", "pending"):
         return False
     assignee = conversation.get("meta", {}).get("assignee")
     if assignee and assignee.get("id") != s.chatwoot_bot_user_id:
