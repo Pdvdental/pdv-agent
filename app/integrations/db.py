@@ -22,8 +22,8 @@ def upsert_patient(phone_e164: str, full_name: str = None, chatwoot_contact_id: 
 
 def get_patient_by_phone(phone_e164: str) -> dict | None:
     db = get_db()
-    res = db.table("patients").select("*").eq("phone_e164", phone_e164).maybe_single().execute()
-    return res.data
+    res = db.table("patients").select("*").eq("phone_e164", phone_e164).limit(1).execute()
+    return res.data[0] if res.data else None
 
 
 def get_or_create_conversation(patient_id: str, chatwoot_conversation_id: int) -> dict:
@@ -33,11 +33,11 @@ def get_or_create_conversation(patient_id: str, chatwoot_conversation_id: int) -
         .select("*")
         .eq("chatwoot_conversation_id", chatwoot_conversation_id)
         .eq("status", "active")
-        .maybe_single()
+        .limit(1)
         .execute()
     )
     if res.data:
-        return res.data
+        return res.data[0]
     new = (
         db.table("conversations")
         .insert({
@@ -138,10 +138,10 @@ def get_next_appointment_by_phone(phone_e164: str) -> dict | None:
         .gte("starts_at", "now()")
         .order("starts_at")
         .limit(1)
-        .maybe_single()
+        .limit(1)
         .execute()
     )
-    return res.data
+    return res.data[0] if res.data else None
 
 
 def update_appointment(appointment_id: str, **kwargs) -> dict:
