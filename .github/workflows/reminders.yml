@@ -1,0 +1,17 @@
+name: Recordatorios de cita
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # cada hora en punto
+  workflow_dispatch:       # permite lanzarlo manualmente desde GitHub
+
+jobs:
+  run-reminders:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Llamar al agente de recordatorios
+        run: |
+          curl -s -X POST \
+            https://pdv-agent-production.up.railway.app/internal/run-reminders \
+            -H "x-internal-token: ${{ secrets.INTERNAL_API_TOKEN }}" \
+            -w "\nHTTP %{http_code}"
