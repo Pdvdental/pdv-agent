@@ -33,9 +33,12 @@ def _build_contents(messages: list[dict]) -> list[dict]:
     contents = []
     for m in messages:
         if m["role"] == "tool":
+            parsed = json.loads(m["content"])
+            if not isinstance(parsed.get("response"), dict):
+                parsed["response"] = {"result": parsed["response"]}
             contents.append({
                 "role": "user",
-                "parts": [{"function_response": json.loads(m["content"])}],
+                "parts": [{"function_response": parsed}],
             })
         elif m["tool_calls"]:
             contents.append({
