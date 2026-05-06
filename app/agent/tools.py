@@ -200,7 +200,8 @@ def tool_escalate_to_human(
         f"🤖 Escalación automática\n**Motivo:** {reason}\n**Resumen:** {summary}",
     )
     chatwoot.add_label(conversation_id, ["escalado"])
-    chatwoot.update_conversation_status(conversation_id, "pending")
+    chatwoot.assign_conversation(conversation_id, s.chatwoot_bot_user_id)
+    chatwoot.update_conversation_status(conversation_id, "open")
 
     return (
         "Te paso con una persona del equipo, te contactarán en breve 😊 "
