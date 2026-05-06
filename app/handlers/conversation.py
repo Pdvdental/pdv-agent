@@ -8,7 +8,7 @@ from app.handlers.webhook import should_bot_respond
 
 logger = logging.getLogger(__name__)
 
-TIMEOUT_SECONDS = 30
+TIMEOUT_SECONDS = 90
 
 
 async def handle_incoming_message(data: dict) -> None:

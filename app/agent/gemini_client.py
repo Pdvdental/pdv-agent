@@ -1,5 +1,7 @@
 import json
 import logging
+import pytz
+from datetime import datetime
 import google.generativeai as genai
 
 from app.config import get_settings
@@ -14,10 +16,15 @@ MAX_TOOL_ITERATIONS = 5
 
 def _init_model():
     s = get_settings()
+    tz = pytz.timezone(s.timezone)
+    now = datetime.now(tz)
+    date_str = now.strftime("%A, %-d de %B de %Y, %H:%M (Europe/Madrid)")
+    dynamic_prompt = SYSTEM_PROMPT + f"\n\n# Fecha y hora actual\n{date_str}"
+
     genai.configure(api_key=s.gemini_api_key)
     return genai.GenerativeModel(
         model_name=s.gemini_model,
-        system_instruction=SYSTEM_PROMPT,
+        system_instruction=dynamic_prompt,
         tools=[{"function_declarations": TOOL_DECLARATIONS}],
     )
 
