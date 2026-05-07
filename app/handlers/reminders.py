@@ -37,7 +37,7 @@ def run_reminders() -> dict:
 
             chatwoot.send_template(
                 contact_id=contact_id,
-                template_name="recordatorio_cita_24h",
+                template_name="cita_recordatorio_pdv",
                 parameters=[name, date_str, time_str, service],
             )
             db.update_appointment(appt["id"], reminder_sent_at=datetime.utcnow().isoformat())

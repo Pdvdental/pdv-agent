@@ -46,7 +46,7 @@ def send_template(contact_id: int, template_name: str, parameters: list[str]) ->
                 "template_params": {
                     "name": template_name,
                     "category": "UTILITY",
-                    "language": "es",
+                    "language": "es_MX",
                     "processed_params": processed,
                 },
             },
