@@ -58,7 +58,8 @@ def check_availability(date_from: str, date_to: str, duration_minutes: int = Non
     ]
 
     slots = []
-    current = dt_from.replace(hour=start_h, minute=start_m, second=0, microsecond=0)
+    day_start = dt_from.replace(hour=start_h, minute=start_m, second=0, microsecond=0)
+    current = max(day_start, dt_from.replace(second=0, microsecond=0))
     while current < dt_to and len(slots) < 8:
         # Skip non-working days (ISO weekday: 1=Mon, 7=Sun)
         if current.isoweekday() not in s.working_days_list:
