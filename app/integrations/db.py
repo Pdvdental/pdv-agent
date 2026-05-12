@@ -32,7 +32,6 @@ def get_or_create_conversation(patient_id: str, chatwoot_conversation_id: int) -
         db.table("conversations")
         .select("*")
         .eq("chatwoot_conversation_id", chatwoot_conversation_id)
-        .eq("status", "active")
         .limit(1)
         .execute()
     )
