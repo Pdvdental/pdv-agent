@@ -93,10 +93,10 @@ def chat_turn(
         tool_name = function_call.name
         tool_args = dict(function_call.args)
 
-        # Inject Chatwoot/DB conversation IDs for escalation tool
+        # Always override conversation IDs for escalation — never trust model-provided values
         if tool_name == "escalate_to_human":
-            tool_args.setdefault("conversation_id", chatwoot_conversation_id)
-            tool_args.setdefault("db_conversation_id", db_conversation_id)
+            tool_args["conversation_id"] = chatwoot_conversation_id
+            tool_args["db_conversation_id"] = db_conversation_id
 
         logger.info(f"Calling tool: {tool_name}({tool_args})")
         tool_result = dispatch(tool_name, tool_args)
