@@ -14,12 +14,14 @@ logger = logging.getLogger(__name__)
 MAX_TOOL_ITERATIONS = 5
 
 
-def _init_model():
+def _init_model(patient_name: str = None):
     s = get_settings()
     tz = pytz.timezone(s.timezone)
     now = datetime.now(tz)
     date_str = now.strftime("%A, %-d de %B de %Y, %H:%M (Europe/Madrid)")
     dynamic_prompt = SYSTEM_PROMPT + f"\n\n# Fecha y hora actual\n{date_str}"
+    if patient_name:
+        dynamic_prompt += f"\n\n# Paciente actual\nNombre registrado: {patient_name}. Salúdale por su nombre de forma natural en el primer mensaje si es oportuno."
 
     genai.configure(api_key=s.gemini_api_key)
     return genai.GenerativeModel(
@@ -58,13 +60,14 @@ def chat_turn(
     chatwoot_conversation_id: int,
     user_message: str,
     source_id: str = None,
+    patient_name: str = None,
 ) -> str:
     """
     Loads conversation history, calls Gemini, handles function calling loop,
     persists everything, and returns the final text response.
     `source_id` (optional) is the Meta wamid of the user message, used for dedup.
     """
-    model = _init_model()
+    model = _init_model(patient_name)
 
     history = db.get_conversation_messages(db_conversation_id, limit=30)
     db.save_message(db_conversation_id, "user", user_message, source_id=source_id)
@@ -93,8 +96,8 @@ def chat_turn(
         tool_name = function_call.name
         tool_args = dict(function_call.args)
 
-        # Always override conversation IDs for escalation — never trust model-provided values
-        if tool_name == "escalate_to_human":
+        # Always override conversation IDs — never trust model-provided values
+        if tool_name in ("escalate_to_human", "close_conversation"):
             tool_args["conversation_id"] = chatwoot_conversation_id
             tool_args["db_conversation_id"] = db_conversation_id
 

@@ -113,6 +113,18 @@ TOOL_DECLARATIONS = [
         },
     },
     {
+        "name": "close_conversation",
+        "description": "Cierra la conversación cuando el paciente se despide o indica que no necesita nada más. Llama esta tool ANTES de despedirte.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "conversation_id": {"type": "integer", "description": "ID de la conversación en Chatwoot."},
+                "db_conversation_id": {"type": "string", "description": "UUID de la conversación en Supabase."},
+            },
+            "required": ["conversation_id", "db_conversation_id"],
+        },
+    },
+    {
         "name": "escalate_to_human",
         "description": "Escala la conversación a un miembro humano del equipo cuando el bot no puede resolver la situación.",
         "parameters": {
@@ -249,6 +261,18 @@ def tool_lookup_faq(query: str) -> str:
     return "\n\n".join(parts)
 
 
+def tool_close_conversation(conversation_id: int, db_conversation_id: str) -> str:
+    try:
+        chatwoot.update_conversation_status(conversation_id, "resolved")
+    except Exception:
+        logger.exception("Failed to resolve conversation in Chatwoot (continuing)")
+    try:
+        db.update_conversation_status(db_conversation_id, "closed")
+    except Exception:
+        logger.exception("Failed to close conversation in DB (continuing)")
+    return "ok"
+
+
 def tool_escalate_to_human(
     reason: str,
     summary: str,
@@ -299,6 +323,7 @@ def tool_escalate_to_human(
 # ---------------------------------------------------------------------------
 
 TOOL_MAP = {
+    "close_conversation": tool_close_conversation,
     "check_availability": tool_check_availability,
     "book_appointment": tool_book_appointment,
     "reschedule_appointment": tool_reschedule_appointment,
