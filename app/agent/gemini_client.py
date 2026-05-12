@@ -14,14 +14,19 @@ logger = logging.getLogger(__name__)
 MAX_TOOL_ITERATIONS = 5
 
 
-def _init_model(patient_name: str = None):
+def _init_model(patient_name: str = None, patient_phone: str = None):
     s = get_settings()
     tz = pytz.timezone(s.timezone)
     now = datetime.now(tz)
     date_str = now.strftime("%A, %-d de %B de %Y, %H:%M (Europe/Madrid)")
     dynamic_prompt = SYSTEM_PROMPT + f"\n\n# Fecha y hora actual\n{date_str}"
-    if patient_name:
-        dynamic_prompt += f"\n\n# Paciente actual\nNombre registrado: {patient_name}. Salúdale por su nombre de forma natural en el primer mensaje si es oportuno."
+    if patient_phone or patient_name:
+        parts = []
+        if patient_phone:
+            parts.append(f"Teléfono (E.164): {patient_phone}")
+        if patient_name:
+            parts.append(f"Nombre registrado: {patient_name}. Salúdale por su nombre de forma natural en el primer mensaje si es oportuno.")
+        dynamic_prompt += "\n\n# Datos del paciente actual\n" + "\n".join(parts)
 
     genai.configure(api_key=s.gemini_api_key)
     return genai.GenerativeModel(
@@ -61,13 +66,14 @@ def chat_turn(
     user_message: str,
     source_id: str = None,
     patient_name: str = None,
+    patient_phone: str = None,
 ) -> str:
     """
     Loads conversation history, calls Gemini, handles function calling loop,
     persists everything, and returns the final text response.
     `source_id` (optional) is the Meta wamid of the user message, used for dedup.
     """
-    model = _init_model(patient_name)
+    model = _init_model(patient_name, patient_phone)
 
     history = db.get_conversation_messages(db_conversation_id, limit=30)
     db.save_message(db_conversation_id, "user", user_message, source_id=source_id)

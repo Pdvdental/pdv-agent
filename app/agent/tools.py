@@ -159,8 +159,8 @@ def tool_check_availability(date_from: str, date_to: str, service: str = None) -
 
     if not doctors:
         return (
-            "No hay ningún doctor en el bot para este tratamiento. "
-            "Por favor llama a escalate_to_human para que un humano lo gestione."
+            "Para este tratamiento la gestión es directa con la clínica. "
+            "Indica al paciente que puede llamar al 93 729 4880. No es necesario escalar."
         )
 
     slots = cal.check_availability(doctors, date_from, date_to)

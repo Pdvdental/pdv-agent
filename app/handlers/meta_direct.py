@@ -84,7 +84,7 @@ async def _handle_one(msg: dict, value: dict) -> None:
     # Run agent (90s budget, off the event loop)
     try:
         reply = await asyncio.wait_for(
-            asyncio.to_thread(chat_turn, db_conv_id, cw_id_for_db, text_body, wamid, patient.get("full_name")),
+            asyncio.to_thread(chat_turn, db_conv_id, cw_id_for_db, text_body, wamid, patient.get("full_name"), phone_e164),
             timeout=TIMEOUT_SECONDS,
         )
     except asyncio.TimeoutError:
