@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     internal_api_token: str
     log_level: str = "INFO"
 
+    # Meta webhook diagnostic proxy (optional)
+    meta_proxy_verify_token: str = ""
+    meta_proxy_app_secret: str = ""
+    meta_proxy_forward_url: str = ""
+
     @property
     def working_days_list(self) -> list[int]:
         return [int(d) for d in self.working_days.split(",")]

@@ -9,6 +9,7 @@ from app.config import get_settings
 from app.handlers.webhook import verify_chatwoot_webhook, extract_message_data
 from app.handlers.conversation import handle_incoming_message
 from app.handlers.reminders import run_reminders
+from app.handlers.meta_proxy import router as meta_proxy_router
 
 logging.basicConfig(level=get_settings().log_level)
 logger = logging.getLogger(__name__)
@@ -22,6 +23,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="PDV Agent", lifespan=lifespan)
+app.include_router(meta_proxy_router)
 
 
 @app.get("/health")
