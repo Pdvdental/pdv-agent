@@ -33,69 +33,80 @@ def _parse_time(t: str) -> tuple[int, int]:
     return int(h), int(m)
 
 
-def check_availability(date_from: str, date_to: str, duration_minutes: int = None) -> list[dict]:
-    """Returns up to 8 free slots between date_from and date_to."""
-    s = get_settings()
+def check_availability(doctors: list[dict], date_from: str, date_to: str) -> list[dict]:
+    """Returns up to 8 free slots across all given doctors between date_from and date_to."""
     tz = _tz()
-    duration = duration_minutes or s.slot_duration_minutes
-    start_h, start_m = _parse_time(s.working_hours_start)
-    end_h, end_m = _parse_time(s.working_hours_end)
-
     service = _build_service()
+
     dt_from = datetime.fromisoformat(date_from).astimezone(tz)
     dt_to = datetime.fromisoformat(date_to).astimezone(tz)
 
     freebusy = service.freebusy().query(body={
         "timeMin": dt_from.isoformat(),
         "timeMax": dt_to.isoformat(),
-        "items": [{"id": s.google_calendar_id}],
+        "items": [{"id": d["calendar_id"]} for d in doctors],
     }).execute()
 
-    busy = [
-        (datetime.fromisoformat(b["start"]).astimezone(tz),
-         datetime.fromisoformat(b["end"]).astimezone(tz))
-        for b in freebusy["calendars"][s.google_calendar_id].get("busy", [])
-    ]
+    all_slots = []
 
-    slots = []
-    day_start = dt_from.replace(hour=start_h, minute=start_m, second=0, microsecond=0)
-    current = max(day_start, dt_from.replace(second=0, microsecond=0))
-    while current < dt_to and len(slots) < 8:
-        # Skip non-working days (ISO weekday: 1=Mon, 7=Sun)
-        if current.isoweekday() not in s.working_days_list:
-            current += timedelta(days=1)
-            current = current.replace(hour=start_h, minute=start_m, second=0, microsecond=0)
-            continue
+    for doctor in doctors:
+        cal_id = doctor["calendar_id"]
+        busy = [
+            (datetime.fromisoformat(b["start"]).astimezone(tz),
+             datetime.fromisoformat(b["end"]).astimezone(tz))
+            for b in freebusy["calendars"].get(cal_id, {}).get("busy", [])
+        ]
 
-        slot_end = current + timedelta(minutes=duration)
-        day_end = current.replace(hour=end_h, minute=end_m)
+        working_days = doctor["working_days"]
+        start_h, start_m = _parse_time(doctor["hours_start"])
+        end_h, end_m = _parse_time(doctor["hours_end"])
+        duration = doctor.get("slot_duration_minutes", 30)
 
-        if slot_end > day_end:
-            current += timedelta(days=1)
-            current = current.replace(hour=start_h, minute=start_m, second=0, microsecond=0)
-            continue
+        slots = []
+        day_start = dt_from.replace(hour=start_h, minute=start_m, second=0, microsecond=0)
+        current = max(day_start, dt_from.replace(second=0, microsecond=0))
 
-        overlaps = any(b_start < slot_end and b_end > current for b_start, b_end in busy)
-        if not overlaps and current > datetime.now(tz):
-            slots.append({
-                "starts_at": current.isoformat(),
-                "ends_at": slot_end.isoformat(),
-                "label": current.strftime("%-d %b, %H:%M"),
-            })
+        while current < dt_to and len(slots) < 5:
+            if current.isoweekday() not in working_days:
+                current += timedelta(days=1)
+                current = current.replace(hour=start_h, minute=start_m, second=0, microsecond=0)
+                continue
 
-        current += timedelta(minutes=duration)
+            slot_end = current + timedelta(minutes=duration)
+            day_end = current.replace(hour=end_h, minute=end_m)
 
-    return slots
+            if slot_end > day_end:
+                current += timedelta(days=1)
+                current = current.replace(hour=start_h, minute=start_m, second=0, microsecond=0)
+                continue
+
+            overlaps = any(b_start < slot_end and b_end > current for b_start, b_end in busy)
+            if not overlaps and current > datetime.now(tz):
+                slots.append({
+                    "doctor_id": doctor["id"],
+                    "doctor_name": doctor["name"],
+                    "calendar_id": cal_id,
+                    "starts_at": current.isoformat(),
+                    "ends_at": slot_end.isoformat(),
+                    "label": current.strftime("%-d %b, %H:%M"),
+                })
+
+            current += timedelta(minutes=duration)
+
+        all_slots.extend(slots)
+
+    all_slots.sort(key=lambda s: s["starts_at"])
+    return all_slots[:8]
 
 
 def create_event(
     summary: str,
     starts_at: str,
     ends_at: str,
+    calendar_id: str,
     description: str = None,
 ) -> dict:
     s = get_settings()
-    tz = _tz()
     body = {
         "summary": summary,
         "start": {"dateTime": starts_at, "timeZone": s.timezone},
@@ -104,21 +115,18 @@ def create_event(
     if description:
         body["description"] = description
     service = _build_service()
-    event = service.events().insert(calendarId=s.google_calendar_id, body=body).execute()
-    return event
+    return service.events().insert(calendarId=calendar_id, body=body).execute()
 
 
-def update_event(event_id: str, starts_at: str, ends_at: str) -> dict:
+def update_event(event_id: str, starts_at: str, ends_at: str, calendar_id: str) -> dict:
     s = get_settings()
     service = _build_service()
-    event = service.events().get(calendarId=s.google_calendar_id, eventId=event_id).execute()
+    event = service.events().get(calendarId=calendar_id, eventId=event_id).execute()
     event["start"] = {"dateTime": starts_at, "timeZone": s.timezone}
     event["end"] = {"dateTime": ends_at, "timeZone": s.timezone}
-    updated = service.events().update(calendarId=s.google_calendar_id, eventId=event_id, body=event).execute()
-    return updated
+    return service.events().update(calendarId=calendar_id, eventId=event_id, body=event).execute()
 
 
-def delete_event(event_id: str) -> None:
-    s = get_settings()
+def delete_event(event_id: str, calendar_id: str) -> None:
     service = _build_service()
-    service.events().delete(calendarId=s.google_calendar_id, eventId=event_id).execute()
+    service.events().delete(calendarId=calendar_id, eventId=event_id).execute()

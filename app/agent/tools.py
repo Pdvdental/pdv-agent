@@ -1,5 +1,5 @@
-import json
 import logging
+import unicodedata
 from datetime import datetime, timedelta
 import pytz
 
@@ -11,6 +11,23 @@ from app.integrations import whatsapp_cloud as wa
 
 logger = logging.getLogger(__name__)
 
+
+VALID_SERVICE_SLUGS = {
+    "ortodoncia",
+    "odontologia-general",
+    "limpieza",
+    "revision",
+    "caries",
+    "endodoncia",
+}
+
+
+def _normalize_slug(s: str) -> str:
+    """Lowercase, strip accents, normalize separators. 'Revisión' -> 'revision'."""
+    s = s.lower().strip().replace("_", "-").replace(" ", "-")
+    s = unicodedata.normalize("NFKD", s).encode("ASCII", "ignore").decode("ASCII")
+    return s
+
 # ---------------------------------------------------------------------------
 # Gemini FunctionDeclaration schemas
 # ---------------------------------------------------------------------------
@@ -18,7 +35,10 @@ logger = logging.getLogger(__name__)
 TOOL_DECLARATIONS = [
     {
         "name": "check_availability",
-        "description": "Consulta los huecos disponibles en el calendario de la clínica entre dos fechas.",
+        "description": (
+            "Consulta los huecos disponibles en el calendario de la clínica entre dos fechas. "
+            "Pasa siempre el parámetro 'service' con el tratamiento que menciona el paciente."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -30,12 +50,16 @@ TOOL_DECLARATIONS = [
                     "type": "string",
                     "description": "Fecha/hora de fin de búsqueda en formato ISO 8601. Ej: 2024-11-15T23:59:59",
                 },
-                "duration_minutes": {
-                    "type": "integer",
-                    "description": "Duración de la cita en minutos. Por defecto 30.",
+                "service": {
+                    "type": "string",
+                    "description": (
+                        "Tratamiento solicitado. Usa exactamente uno de estos slugs: "
+                        "ortodoncia, odontologia-general, limpieza, revision, caries, endodoncia. "
+                        "Si no está claro, usa odontologia-general."
+                    ),
                 },
             },
-            "required": ["date_from", "date_to"],
+            "required": ["date_from", "date_to", "service"],
         },
     },
     {
@@ -46,11 +70,12 @@ TOOL_DECLARATIONS = [
             "properties": {
                 "patient_name": {"type": "string", "description": "Nombre completo del paciente."},
                 "patient_phone": {"type": "string", "description": "Teléfono del paciente en formato E.164."},
-                "service": {"type": "string", "description": "Tipo de servicio (limpieza, revisión, implante, ortodoncia, urgencia, etc.)."},
-                "starts_at": {"type": "string", "description": "Fecha y hora de inicio en ISO 8601."},
+                "service": {"type": "string", "description": "Tipo de servicio (slug exacto del check_availability)."},
+                "starts_at": {"type": "string", "description": "Fecha y hora de inicio en ISO 8601 (exactamente el starts_at devuelto por check_availability)."},
+                "doctor_id": {"type": "integer", "description": "ID del doctor del slot elegido (devuelto por check_availability)."},
                 "notes": {"type": "string", "description": "Notas adicionales (opcional)."},
             },
-            "required": ["patient_name", "patient_phone", "service", "starts_at"],
+            "required": ["patient_name", "patient_phone", "service", "starts_at", "doctor_id"],
         },
     },
     {
@@ -108,16 +133,34 @@ TOOL_DECLARATIONS = [
 # Tool implementations
 # ---------------------------------------------------------------------------
 
-def _slot_duration() -> int:
-    return get_settings().slot_duration_minutes
+def tool_check_availability(date_from: str, date_to: str, service: str = None) -> str:
+    if service:
+        slug = _normalize_slug(service)
+        if slug not in VALID_SERVICE_SLUGS:
+            return (
+                "Este tratamiento no es reservable por WhatsApp. "
+                "Por favor llama a escalate_to_human para que un humano lo gestione."
+            )
+        doctors = db.get_doctors_for_service(slug)
+    else:
+        doctors = db.get_all_active_doctors()
 
+    if not doctors:
+        return (
+            "No hay ningún doctor en el bot para este tratamiento. "
+            "Por favor llama a escalate_to_human para que un humano lo gestione."
+        )
 
-def tool_check_availability(date_from: str, date_to: str, duration_minutes: int = None) -> str:
-    slots = cal.check_availability(date_from, date_to, duration_minutes or _slot_duration())
+    slots = cal.check_availability(doctors, date_from, date_to)
     if not slots:
         return "No hay huecos disponibles en ese rango de fechas. Prueba un rango más amplio."
-    lines = "\n".join(f"• {s['label']} (starts_at: {s['starts_at']})" for s in slots)
-    return f"Huecos disponibles:\n{lines}"
+
+    multiple_doctors = len(doctors) > 1
+    lines = []
+    for s in slots:
+        doctor_str = f" con {s['doctor_name']}" if multiple_doctors else ""
+        lines.append(f"• {s['label']}{doctor_str} (starts_at: {s['starts_at']}, doctor_id: {s['doctor_id']})")
+    return f"Huecos disponibles:\n" + "\n".join(lines)
 
 
 def tool_book_appointment(
@@ -125,6 +168,7 @@ def tool_book_appointment(
     patient_phone: str,
     service: str,
     starts_at: str,
+    doctor_id: int,
     notes: str = None,
 ) -> str:
     s = get_settings()
@@ -132,11 +176,17 @@ def tool_book_appointment(
     dt_start = datetime.fromisoformat(starts_at).astimezone(tz)
     dt_end = dt_start + timedelta(minutes=s.slot_duration_minutes)
 
-    summary = f"{patient_name} - {service}"
+    doctor = db.get_doctor_by_id(doctor_id)
+    if not doctor:
+        return "Error: doctor no encontrado. Por favor inténtalo de nuevo."
+
+    service_slug = _normalize_slug(service)
+    calendar_id = doctor["calendar_id"]
     event = cal.create_event(
-        summary=summary,
+        summary=f"{patient_name} - {service_slug}",
         starts_at=dt_start.isoformat(),
         ends_at=dt_end.isoformat(),
+        calendar_id=calendar_id,
         description=notes,
     )
 
@@ -146,11 +196,19 @@ def tool_book_appointment(
         google_event_id=event["id"],
         starts_at=dt_start.isoformat(),
         ends_at=dt_end.isoformat(),
-        service=service,
+        service=service_slug,
+        doctor_id=doctor_id,
+        calendar_id=calendar_id,
     )
 
     label = dt_start.strftime("%-d %b a las %H:%M")
-    return f"Cita confirmada ✅\n• Paciente: {patient_name}\n• Servicio: {service}\n• Fecha: {label}"
+    return (
+        f"Cita confirmada ✅\n"
+        f"• Paciente: {patient_name}\n"
+        f"• Servicio: {service_slug}\n"
+        f"• Doctor/a: {doctor['name']}\n"
+        f"• Fecha: {label}"
+    )
 
 
 def tool_reschedule_appointment(patient_phone: str, new_starts_at: str) -> str:
@@ -160,10 +218,11 @@ def tool_reschedule_appointment(patient_phone: str, new_starts_at: str) -> str:
     if not appt:
         return "No encontré ninguna cita confirmada próxima para ese número."
 
+    calendar_id = appt.get("calendar_id") or s.google_calendar_id
     dt_start = datetime.fromisoformat(new_starts_at).astimezone(tz)
     dt_end = dt_start + timedelta(minutes=s.slot_duration_minutes)
 
-    cal.update_event(appt["google_event_id"], dt_start.isoformat(), dt_end.isoformat())
+    cal.update_event(appt["google_event_id"], dt_start.isoformat(), dt_end.isoformat(), calendar_id)
     db.update_appointment(appt["id"], starts_at=dt_start.isoformat(), ends_at=dt_end.isoformat())
 
     label = dt_start.strftime("%-d %b a las %H:%M")
@@ -171,11 +230,13 @@ def tool_reschedule_appointment(patient_phone: str, new_starts_at: str) -> str:
 
 
 def tool_cancel_appointment(patient_phone: str) -> str:
+    s = get_settings()
     appt = db.get_next_appointment_by_phone(patient_phone)
     if not appt:
         return "No encontré ninguna cita confirmada próxima para ese número."
 
-    cal.delete_event(appt["google_event_id"])
+    calendar_id = appt.get("calendar_id") or s.google_calendar_id
+    cal.delete_event(appt["google_event_id"], calendar_id)
     db.update_appointment(appt["id"], status="cancelled")
     return "Cita cancelada ✅. Si quieres otra, dímelo y buscamos un hueco."
 

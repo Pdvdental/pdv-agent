@@ -119,21 +119,46 @@ def save_appointment(
     starts_at: str,
     ends_at: str,
     service: str = None,
+    doctor_id: int = None,
+    calendar_id: str = None,
 ) -> dict:
     db = get_db()
-    res = (
-        db.table("appointments")
-        .insert({
-            "patient_id": patient_id,
-            "google_event_id": google_event_id,
-            "starts_at": starts_at,
-            "ends_at": ends_at,
-            "service": service,
-            "status": "confirmed",
-        })
-        .execute()
-    )
+    data = {
+        "patient_id": patient_id,
+        "google_event_id": google_event_id,
+        "starts_at": starts_at,
+        "ends_at": ends_at,
+        "service": service,
+        "status": "confirmed",
+    }
+    if doctor_id is not None:
+        data["doctor_id"] = doctor_id
+    if calendar_id is not None:
+        data["calendar_id"] = calendar_id
+    res = db.table("appointments").insert(data).execute()
     return res.data[0]
+
+
+def get_doctor_by_id(doctor_id: int) -> dict | None:
+    db = get_db()
+    res = db.table("doctors").select("*").eq("id", doctor_id).limit(1).execute()
+    return res.data[0] if res.data else None
+
+
+def get_doctors_for_service(service_slug: str) -> list[dict]:
+    db = get_db()
+    res = db.table("doctor_services").select("doctor_id").eq("service_slug", service_slug).execute()
+    if not res.data:
+        return []
+    doctor_ids = [r["doctor_id"] for r in res.data]
+    res = db.table("doctors").select("*").in_("id", doctor_ids).eq("active", True).execute()
+    return res.data
+
+
+def get_all_active_doctors() -> list[dict]:
+    db = get_db()
+    res = db.table("doctors").select("*").eq("active", True).execute()
+    return res.data
 
 
 def get_next_appointment_by_phone(phone_e164: str) -> dict | None:
