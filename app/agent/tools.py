@@ -276,11 +276,12 @@ def tool_escalate_to_human(
 
     alert_phone = s.escalation_alert_phone
     if alert_phone and s.meta_graph_token and s.meta_phone_number_id:
+        cw_base = s.chatwoot_base_url.rstrip("/")
         alert_body = (
             f"🚨 Escalación PDV bot\n"
             f"Motivo: {reason}\n"
             f"Resumen: {summary}\n"
-            f"Conversación Chatwoot: {conversation_id}"
+            f"Abrir conversación: {cw_base}/app/accounts/{s.chatwoot_account_id}/conversations/{conversation_id}"
         )
         try:
             wa.send_text(alert_phone, alert_body)
