@@ -263,13 +263,16 @@ def tool_escalate_to_human(
     except Exception:
         logger.exception("Failed to save escalation to DB (continuing)")
 
-    chatwoot.add_private_note(
-        conversation_id,
-        f"🤖 Escalación automática\n**Motivo:** {reason}\n**Resumen:** {summary}",
-    )
-    chatwoot.add_label(conversation_id, ["escalado"])
-    chatwoot.assign_conversation(conversation_id, s.chatwoot_bot_user_id)
-    chatwoot.update_conversation_status(conversation_id, "open")
+    try:
+        chatwoot.add_private_note(
+            conversation_id,
+            f"🤖 Escalación automática\n**Motivo:** {reason}\n**Resumen:** {summary}",
+        )
+        chatwoot.add_label(conversation_id, ["escalado"])
+        chatwoot.assign_conversation(conversation_id, s.chatwoot_bot_user_id)
+        chatwoot.update_conversation_status(conversation_id, "open")
+    except Exception:
+        logger.exception("Failed to update Chatwoot for escalation (continuing)")
 
     alert_phone = s.escalation_alert_phone
     if alert_phone and s.meta_graph_token and s.meta_phone_number_id:
