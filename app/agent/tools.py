@@ -257,8 +257,11 @@ def tool_escalate_to_human(
 ) -> str:
     s = get_settings()
 
-    db.save_escalation(db_conversation_id, reason)
-    db.update_conversation_status(db_conversation_id, "escalated")
+    try:
+        db.save_escalation(db_conversation_id, reason)
+        db.update_conversation_status(db_conversation_id, "escalated")
+    except Exception:
+        logger.exception("Failed to save escalation to DB (continuing)")
 
     chatwoot.add_private_note(
         conversation_id,
