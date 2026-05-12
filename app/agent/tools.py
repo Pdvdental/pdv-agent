@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import datetime, timedelta
 import pytz
 
@@ -6,6 +7,9 @@ from app.config import get_settings
 from app.integrations import calendar as cal
 from app.integrations import db
 from app.integrations import chatwoot
+from app.integrations import whatsapp_cloud as wa
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Gemini FunctionDeclaration schemas
@@ -202,6 +206,19 @@ def tool_escalate_to_human(
     chatwoot.add_label(conversation_id, ["escalado"])
     chatwoot.assign_conversation(conversation_id, s.chatwoot_bot_user_id)
     chatwoot.update_conversation_status(conversation_id, "open")
+
+    alert_phone = s.escalation_alert_phone
+    if alert_phone and s.meta_graph_token and s.meta_phone_number_id:
+        alert_body = (
+            f"🚨 Escalación PDV bot\n"
+            f"Motivo: {reason}\n"
+            f"Resumen: {summary}\n"
+            f"Conversación Chatwoot: {conversation_id}"
+        )
+        try:
+            wa.send_text(alert_phone, alert_body)
+        except Exception:
+            logger.exception("Failed to send escalation alert via WhatsApp")
 
     return (
         "Te paso con una persona del equipo, te contactarán en breve 😊 "

@@ -109,3 +109,56 @@ def validate_webhook_signature(payload: bytes, signature_header: str) -> bool:
     token = get_settings().chatwoot_hmac_token
     expected = hmac.new(token.encode(), payload, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, signature_header)
+
+
+def get_conversation(conversation_id: int) -> dict | None:
+    url = f"{_base()}/conversations/{conversation_id}"
+    resp = httpx.get(url, headers=_headers(), timeout=10)
+    if resp.status_code == 404:
+        return None
+    resp.raise_for_status()
+    return resp.json()
+
+
+def find_open_conversation_for_phone(phone_e164: str) -> int | None:
+    """
+    Returns the most recent open/pending Chatwoot conversation ID in our inbox
+    for a contact identified by phone (E.164 with leading +). None if not found.
+    """
+    s = get_settings()
+    search_q = phone_e164.lstrip("+")
+    resp = httpx.get(
+        f"{_base()}/contacts/search",
+        headers=_headers(),
+        params={"q": search_q, "include": "contact_inboxes"},
+        timeout=10,
+    )
+    resp.raise_for_status()
+    contacts = resp.json().get("payload", []) or []
+    if not contacts:
+        return None
+
+    candidate_convs = []
+    for contact in contacts:
+        cid = contact.get("id")
+        if not cid:
+            continue
+        cresp = httpx.get(
+            f"{_base()}/contacts/{cid}/conversations",
+            headers=_headers(),
+            timeout=10,
+        )
+        if cresp.status_code != 200:
+            continue
+        payload = cresp.json().get("payload", []) or []
+        for conv in payload:
+            if conv.get("inbox_id") != s.chatwoot_inbox_id:
+                continue
+            if conv.get("status") in ("open", "pending"):
+                candidate_convs.append(conv)
+
+    if not candidate_convs:
+        return None
+
+    candidate_convs.sort(key=lambda c: c.get("last_activity_at") or 0, reverse=True)
+    return candidate_convs[0].get("id")

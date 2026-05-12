@@ -43,6 +43,13 @@ class Settings(BaseSettings):
     meta_proxy_app_secret: str = ""
     meta_proxy_forward_url: str = ""
 
+    # Direct WhatsApp handler bypass (Chatwoot worker bypass)
+    direct_handler_enabled: bool = False
+    meta_graph_token: str = ""
+    meta_phone_number_id: str = ""
+    meta_graph_api_version: str = "v19.0"
+    escalation_alert_phone: str = ""  # E.164 with +, e.g. +34677523665
+
     @property
     def working_days_list(self) -> list[int]:
         return [int(d) for d in self.working_days.split(",")]

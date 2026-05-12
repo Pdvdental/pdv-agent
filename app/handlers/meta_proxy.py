@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import hmac
 import json
@@ -9,6 +10,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from app.config import get_settings
+from app.handlers.meta_direct import process_meta_payload
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -118,5 +120,17 @@ async def meta_delivery(request: Request):
     logger.info("META-PROXY recv full payload: %s", raw_body.decode("utf-8", errors="replace"))
 
     await _forward_to_chatwoot(raw_body, headers)
+
+    if s.direct_handler_enabled and isinstance(payload, dict):
+        has_messages = any(
+            (ch.get("value") or {}).get("messages")
+            for entry in payload.get("entry", []) or []
+            for ch in (entry.get("changes") or [])
+        )
+        if has_messages:
+            logger.info("META-PROXY: dispatching to direct handler")
+            asyncio.create_task(process_meta_payload(payload))
+        else:
+            logger.info("META-PROXY: no messages in payload, skipping direct handler")
 
     return JSONResponse({"status": "ok"})

@@ -57,15 +57,17 @@ def chat_turn(
     db_conversation_id: str,
     chatwoot_conversation_id: int,
     user_message: str,
+    source_id: str = None,
 ) -> str:
     """
     Loads conversation history, calls Gemini, handles function calling loop,
     persists everything, and returns the final text response.
+    `source_id` (optional) is the Meta wamid of the user message, used for dedup.
     """
     model = _init_model()
 
     history = db.get_conversation_messages(db_conversation_id, limit=30)
-    db.save_message(db_conversation_id, "user", user_message)
+    db.save_message(db_conversation_id, "user", user_message, source_id=source_id)
 
     contents = _build_contents(history)
     contents.append({"role": "user", "parts": [{"text": user_message}]})

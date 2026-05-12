@@ -70,6 +70,7 @@ def save_message(
     tool_calls: dict = None,
     tool_response: dict = None,
     chatwoot_message_id: int = None,
+    source_id: str = None,
 ) -> dict:
     db = get_db()
     data = {"conversation_id": conversation_id, "role": role, "content": content}
@@ -79,8 +80,18 @@ def save_message(
         data["tool_response"] = tool_response
     if chatwoot_message_id is not None:
         data["chatwoot_message_id"] = chatwoot_message_id
+    if source_id is not None:
+        data["source_id"] = source_id
     res = db.table("messages").insert(data).execute()
     return res.data[0]
+
+
+def message_exists_by_source_id(source_id: str) -> bool:
+    if not source_id:
+        return False
+    db = get_db()
+    res = db.table("messages").select("id").eq("source_id", source_id).limit(1).execute()
+    return bool(res.data)
 
 
 def update_conversation_status(conversation_id: str, status: str) -> None:
