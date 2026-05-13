@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     meta_phone_number_id: str = ""
     meta_graph_api_version: str = "v19.0"
     escalation_alert_phone: str = ""  # E.164 with +, e.g. +34677523665
+    reminders_enabled: bool = False
 
     @property
     def working_days_list(self) -> list[int]:

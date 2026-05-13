@@ -15,9 +15,23 @@ logging.basicConfig(level=get_settings().log_level)
 logger = logging.getLogger(__name__)
 
 
+async def _reminder_loop():
+    while True:
+        await asyncio.sleep(3600)  # run every hour
+        try:
+            result = await asyncio.to_thread(run_reminders)
+            logger.info(f"Reminders (scheduled): {result}")
+        except Exception:
+            logger.exception("Reminders loop error")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("PDV Agent starting up")
+    s = get_settings()
+    if s.reminders_enabled:
+        asyncio.create_task(_reminder_loop())
+        logger.info("Reminder loop started")
     yield
     logger.info("PDV Agent shutting down")
 
@@ -49,6 +63,8 @@ async def internal_run_reminders(x_internal_token: str = Header(None)):
     s = get_settings()
     if x_internal_token != s.internal_api_token:
         raise HTTPException(status_code=403, detail="Forbidden")
+    if not s.reminders_enabled:
+        return {"status": "disabled"}
 
     result = await asyncio.to_thread(run_reminders)
     logger.info(f"Reminders result: {result}")
