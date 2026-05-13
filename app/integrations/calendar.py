@@ -127,6 +127,12 @@ def update_event(event_id: str, starts_at: str, ends_at: str, calendar_id: str) 
     return service.events().update(calendarId=calendar_id, eventId=event_id, body=event).execute()
 
 
-def delete_event(event_id: str, calendar_id: str) -> None:
+def cancel_event(event_id: str, calendar_id: str) -> None:
+    """Mark an event as cancelled (red color + ANULADO prefix) instead of deleting it."""
     service = _build_service()
-    service.events().delete(calendarId=calendar_id, eventId=event_id).execute()
+    event = service.events().get(calendarId=calendar_id, eventId=event_id).execute()
+    summary = event.get("summary", "")
+    if not summary.startswith("ANULADO"):
+        event["summary"] = f"ANULADO - {summary}"
+    event["colorId"] = "3"  # red — matches the "ANULADO" calendar color
+    service.events().update(calendarId=calendar_id, eventId=event_id, body=event).execute()

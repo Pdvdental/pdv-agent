@@ -248,7 +248,7 @@ def tool_cancel_appointment(patient_phone: str) -> str:
         return "No encontré ninguna cita confirmada próxima para ese número."
 
     calendar_id = appt.get("calendar_id") or s.google_calendar_id
-    cal.delete_event(appt["google_event_id"], calendar_id)
+    cal.cancel_event(appt["google_event_id"], calendar_id)
     db.update_appointment(appt["id"], status="cancelled")
     return "Cita cancelada ✅. Si quieres otra, dímelo y buscamos un hueco."
 
