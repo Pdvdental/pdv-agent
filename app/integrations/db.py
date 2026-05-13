@@ -203,6 +203,25 @@ def get_appointments_needing_reminder() -> list[dict]:
     return res.data
 
 
+def get_appointments_needing_post_cancellation_followup(days: int = 20) -> list[dict]:
+    from datetime import datetime, timezone, timedelta
+    db = get_db()
+    now = datetime.now(timezone.utc)
+    window_start = (now - timedelta(days=days + 1)).isoformat()
+    window_end = (now - timedelta(days=days)).isoformat()
+    res = (
+        db.table("appointments")
+        .select("*, patients(phone_e164, full_name, chatwoot_contact_id)")
+        .eq("status", "cancelled")
+        .eq("skip_post_cancellation_followup", False)
+        .is_("post_cancellation_followup_sent_at", "null")
+        .gte("cancelled_at", window_start)
+        .lte("cancelled_at", window_end)
+        .execute()
+    )
+    return res.data
+
+
 def save_escalation(conversation_id: str, reason: str) -> dict:
     db = get_db()
     res = db.table("escalations").insert({"conversation_id": conversation_id, "reason": reason}).execute()

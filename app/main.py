@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from app.config import get_settings
 from app.handlers.webhook import verify_chatwoot_webhook, extract_message_data
 from app.handlers.conversation import handle_incoming_message
-from app.handlers.reminders import run_reminders
+from app.handlers.reminders import run_reminders, run_post_cancellation_followups
 from app.handlers.meta_proxy import router as meta_proxy_router
 
 logging.basicConfig(level=get_settings().log_level)
@@ -18,9 +18,14 @@ logger = logging.getLogger(__name__)
 async def _reminder_loop():
     while True:
         await asyncio.sleep(3600)  # run every hour
+        s = get_settings()
         try:
-            result = await asyncio.to_thread(run_reminders)
-            logger.info(f"Reminders (scheduled): {result}")
+            if s.reminders_enabled:
+                result = await asyncio.to_thread(run_reminders)
+                logger.info(f"Reminders (scheduled): {result}")
+            if s.post_cancellation_followups_enabled:
+                result = await asyncio.to_thread(run_post_cancellation_followups)
+                logger.info(f"Post-cancellation follow-ups (scheduled): {result}")
         except Exception:
             logger.exception("Reminders loop error")
 
@@ -29,7 +34,7 @@ async def _reminder_loop():
 async def lifespan(app: FastAPI):
     logger.info("PDV Agent starting up")
     s = get_settings()
-    if s.reminders_enabled:
+    if s.reminders_enabled or s.post_cancellation_followups_enabled:
         asyncio.create_task(_reminder_loop())
         logger.info("Reminder loop started")
     yield
@@ -68,4 +73,17 @@ async def internal_run_reminders(x_internal_token: str = Header(None)):
 
     result = await asyncio.to_thread(run_reminders)
     logger.info(f"Reminders result: {result}")
+    return result
+
+
+@app.post("/internal/run-post-cancellation-followups")
+async def internal_run_post_cancellation_followups(x_internal_token: str = Header(None)):
+    s = get_settings()
+    if x_internal_token != s.internal_api_token:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if not s.post_cancellation_followups_enabled:
+        return {"status": "disabled"}
+
+    result = await asyncio.to_thread(run_post_cancellation_followups)
+    logger.info(f"Post-cancellation follow-ups result: {result}")
     return result

@@ -97,6 +97,7 @@ TOOL_DECLARATIONS = [
             "type": "object",
             "properties": {
                 "patient_phone": {"type": "string", "description": "Teléfono del paciente en E.164."},
+                "skip_followup": {"type": "boolean", "description": "true si el paciente dijo que no va a volver o que llamará él mismo. Por defecto false."},
             },
             "required": ["patient_phone"],
         },
@@ -241,7 +242,7 @@ def tool_reschedule_appointment(patient_phone: str, new_starts_at: str) -> str:
     return f"Cita reagendada ✅\nNueva fecha: {label}"
 
 
-def tool_cancel_appointment(patient_phone: str) -> str:
+def tool_cancel_appointment(patient_phone: str, skip_followup: bool = False) -> str:
     s = get_settings()
     appt = db.get_next_appointment_by_phone(patient_phone)
     if not appt:
@@ -249,7 +250,12 @@ def tool_cancel_appointment(patient_phone: str) -> str:
 
     calendar_id = appt.get("calendar_id") or s.google_calendar_id
     cal.cancel_event(appt["google_event_id"], calendar_id)
-    db.update_appointment(appt["id"], status="cancelled")
+    db.update_appointment(
+        appt["id"],
+        status="cancelled",
+        cancelled_at=datetime.utcnow().isoformat(),
+        skip_post_cancellation_followup=skip_followup,
+    )
     return "Cita cancelada ✅. Si quieres otra, dímelo y buscamos un hueco."
 
 
