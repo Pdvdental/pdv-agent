@@ -2,9 +2,9 @@
 
 Agente conversacional WhatsApp para Policlínica Dental del Vallès (PDV), Barberà del Vallès, Barcelona.
 
-## Estado actual (2026-05-11) — SISTEMA EN PRODUCCIÓN ✅
+## Estado actual (2026-05-13) — SISTEMA EN PRODUCCIÓN ✅
 
-El bot funciona en el número real de la clínica (+34678837755). Un paciente puede escribir por WhatsApp, el bot responde, consulta disponibilidad en Google Calendar y reserva citas.
+El bot funciona en el número real de la clínica (+34678837755). Reserva citas, reagenda, cancela, escala a humano y reconoce pacientes recurrentes. El flujo pasa directamente Meta→bot (bypass Chatwoot worker).
 
 ## Stack
 - Python 3.11 + FastAPI (este repo)
@@ -37,7 +37,7 @@ El bot funciona en el número real de la clínica (+34678837755). Un paciente pu
 - Token caduca ~2026-07-05 → renovar en Meta Business Manager → Usuarios del sistema → pdv-agent
 - Webhook URL: `https://chatwoot-production-3e3a.up.railway.app/webhooks/whatsapp/+15556346898`
 - Verify token: `27f818781fd6e81065e19bb371854b1b`
-- Plantilla `cita_recordatorio_pdv`: estado PENDING en Meta (es_MX, 4 params: nombre, fecha, hora, servicio)
+- Plantillas: ver sección "Plantillas Meta WhatsApp" en Supabase más abajo
 
 ### Google Calendar OAuth
 - Client ID: 628094446493-3cv505bb3jr9m3il9n1d67195oq8gidh.apps.googleusercontent.com
@@ -46,64 +46,47 @@ El bot funciona en el número real de la clínica (+34678837755). Un paciente pu
 
 ### Supabase
 - URL: https://gbyxlraihcpctqxnkwjy.supabase.co
-- Tablas: `patients`, `conversations`, `appointments`, `faqs`
+- Tablas: `patients`, `conversations`, `messages`, `appointments`, `faqs`, `doctors`, `doctor_services`, `escalations`
 - 12 FAQs cargadas
+- `appointments` tiene columnas extra: `doctor_id`, `calendar_id`, `cancelled_at`, `post_cancellation_followup_sent_at`, `skip_post_cancellation_followup`
+
+### Plantillas Meta WhatsApp
+- `cita_recordatorio_pdv`: estado PENDING (4 params: nombre, fecha, hora, servicio) — se usa con `REMINDERS_ENABLED=true`
+- `cita_seguimiento_pdv`: **pendiente de crear** en Meta Business Manager (2 params: nombre, servicio) — se usa con `POST_CANCELLATION_FOLLOWUPS_ENABLED=true`
 
 ---
 
-## PRÓXIMA TAREA: Arquitectura multi-doctor
-
-### Por qué
-El sistema actual usa un único Google Calendar con horario global. La clínica tiene 4 doctores activos con horarios variables y tratamientos específicos por doctor.
-
-### Doctores confirmados
+## Arquitectura multi-doctor ✅ (implementado 2026-05-12)
 
 | Doctor | Tratamientos | Horario | Calendar Google |
 |--------|-------------|---------|-----------------|
-| AINA | Ortodoncia | Mié ~cada 14 días, 14-20h | Calendar "Ortodoncia" → **pendiente renombrar + ID** |
-| LAURYS | Odont. General, limpieza, revisiones, caries | Jue 11-19:30 / Mar variable mañanas | Calendar "Laurys" → **pendiente ID** |
-| MILA (Maria Milagros) | Odont. General | Mar 11-20:30 / Mié 10-14 | Calendar "Odonto General" → **pendiente renombrar + ID** |
-| VANESSA | — | Siempre escala a humano | No necesita calendar |
+| AINA OLIVART | Ortodoncia | Mié ~cada 14 días, 14-20h | Calendar "Dra. AINA OLIVART" (colorId=6) |
+| LAURYS ARAB | Odont. General, limpieza, revisiones, caries | Jue 10-19:30 / Mar mañanas | Calendar "Dra. LAURYS ARAB" (colorId=18) |
+| MILA (María Milagros Cardozo) | Odont. General | Mar 11-20:30 / Mié 10-14 | Calendar "Dra. MARÍA MILAGROS CARDOZO" (colorId=20) |
+| VANESSA | — | No gestiona agenda por bot | No necesita calendar |
 
-**Estado**: Vanessa necesita confirmar el mapeo de nombres de calendario → doctor y compartir los Calendar IDs.
+**Flujo:** paciente pide servicio X → bot busca en `doctor_services` qué doctores lo hacen → consulta freebusy de sus calendarios → ofrece slots con nombre de doctora → reserva en el calendar correcto.
 
-Calendarios actuales en Google Calendar de Vanessa: "Policlínica Dental del Vallès", "ANULADO", "Cirujano", "Endodoncia", "Laurys", "Odonto General" (x2), "Odontología General", "Ortodoncia"
+**Vanessa:** si el paciente pide cita con Vanessa, el bot ofrece disponibilidad con otras doctoras primero. Solo escala si el paciente insiste explícitamente.
 
-### Plan de implementación
+**Calendario ANULADO:** `colorId=3` (#f83a22, rojo). Cuando se cancela una cita, el evento de Google Calendar se marca con ese color y prefijo "ANULADO - " en lugar de borrarse.
 
-#### 1. Nuevas tablas en Supabase
-```sql
-CREATE TABLE doctors (
-  id SERIAL PRIMARY KEY,
-  name TEXT NOT NULL,
-  slug TEXT UNIQUE NOT NULL,
-  calendar_id TEXT NOT NULL,
-  hours_start TEXT NOT NULL,
-  hours_end TEXT NOT NULL,
-  working_days INTEGER[] NOT NULL,  -- ISO: 1=Lun, 7=Dom
-  slot_duration_minutes INTEGER DEFAULT 30,
-  active BOOLEAN DEFAULT TRUE
-);
+## Features de automatización
 
-CREATE TABLE doctor_services (
-  doctor_id INTEGER REFERENCES doctors(id),
-  service_slug TEXT NOT NULL,
-  PRIMARY KEY (doctor_id, service_slug)
-);
-```
+| Feature | Estado | Variable Railway |
+|---------|--------|-----------------|
+| Recordatorio 24h antes de cita | Código listo ✅, inactivo | `REMINDERS_ENABLED=false` |
+| Seguimiento post-cancelación 20 días | Código listo ✅, inactivo | `POST_CANCELLATION_FOLLOWUPS_ENABLED=false` |
 
-#### 2. Cambios en el código
-- `app/integrations/calendar.py`: `check_availability(doctors: list[dict])` — acepta lista de doctores con su calendar_id y horario; devuelve slots con `doctor_id`
-- `app/integrations/db.py`: añadir `get_doctors_for_service(service_slug)` y `get_all_active_doctors()`
-- `app/agent/tools.py`: modificar tool de disponibilidad para (1) detectar tratamiento → (2) buscar doctores elegibles → (3) si solo Vanessa → escalar → (4) consultar calendarios
-- `app/config.py`: las variables globales `working_hours_start/end`, `working_days`, `slot_duration_minutes` pasan a nivel doctor
+**Para activar recordatorios:** requiere que Meta apruebe `cita_recordatorio_pdv` (estado PENDING).
+**Para activar seguimiento:** requiere crear y aprobar plantilla `cita_seguimiento_pdv` en Meta (2 params: nombre, servicio). Cuerpo sugerido: *"Hola {{1}} 😊 Vimos que cancelaste tu cita de {{2}}. ¿Te gustaría que te buscara un nuevo hueco? Escríbeme y lo gestionamos enseguida, o si prefieres puedes llamar al 93 729 4880 🦷"*
 
-#### 3. Flujo del bot con multi-doctor
-1. Paciente pide tratamiento X
-2. Bot busca en `doctor_services` qué doctores hacen X
-3. Si solo está Vanessa → respuesta: "Para este tratamiento contacta directamente con la clínica al 93 729 4880"
-4. Si hay ≥1 doctor automatable → consultar sus calendarios → ofrecer slots (indicar doctor si hay varios)
-5. Al confirmar → crear evento en el calendario del doctor elegido
+## Otras features activas
+
+- **Reconocimiento de pacientes**: el bot saluda por nombre si ya tiene historial (`patient_name` inyectado en el prompt)
+- **Teléfono en contexto**: `phone_e164` inyectado siempre — el bot nunca pide el teléfono si ya lo tiene
+- **close_conversation**: cuando el paciente se despide, el bot cierra la conversación en Chatwoot (status "resolved") y en DB ("closed")
+- **Bypass directo Meta→bot**: `DIRECT_HANDLER_ENABLED=true` — evita el worker Sidekiq de Chatwoot que muere silenciosamente. Chatwoot solo sirve como panel de gestión.
 
 ---
 
